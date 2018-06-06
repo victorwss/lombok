@@ -426,15 +426,22 @@ public class LombokProcessor extends AbstractProcessor {
 		return (JavacProcessingEnvironment) procEnv;
 	}
 
+	private static final String GRADLE_INCREMENTAL_FILER_CLASS_NAME = "org.gradle.api.internal.tasks.compile.processing.IncrementalFiler";
+
 	/**
 	 * This class casts the given filer to a JavacFiler. In case of
 	 * gradle incremental compilation, the delegate Filer of the gradle wrapper is returned.
 	 */
 	public JavacFiler getJavacFiler(Filer filer) {
-		final Class<?> filerSuperClass = filer.getClass().getSuperclass();
-		if (filerSuperClass.getName().equals("org.gradle.api.internal.tasks.compile.processing.IncrementalFiler")) {
+		final Class<?> filerClass = filer.getClass();
+		final Class<?> filerSuperClass = filerClass.getSuperclass();
+		final Class<?> gradleFilerClass =
+				filerClass.getName().equals(GRADLE_INCREMENTAL_FILER_CLASS_NAME) ? filerClass
+				: filerSuperClass.getName().equals(GRADLE_INCREMENTAL_FILER_CLASS_NAME) ? filerSuperClass
+				: null;
+		if (gradleFilerClass != null) {
 			try {
-				Field field = filerSuperClass.getDeclaredField("delegate");
+				Field field = gradleFilerClass.getDeclaredField("delegate");
 				field.setAccessible(true);
 				Object delegate = field.get(filer);
 				return (JavacFiler) delegate;
@@ -443,6 +450,11 @@ public class LombokProcessor extends AbstractProcessor {
 				processingEnv.getMessager().printMessage(Kind.WARNING,
 						"Can't get the delegate of the gradle IncrementalFiler. Lombok won't work.");
 			}
+		}
+		if (!(filer instanceof JavacFiler)) {
+			String message = "Don't know how to handle unknown filer " + filerClass.getName() + ". Lombok won't work.";
+			processingEnv.getMessager().printMessage(Kind.WARNING, message);
+			throw new RuntimeException(message);
 		}
 		return (JavacFiler) filer;
 	}
